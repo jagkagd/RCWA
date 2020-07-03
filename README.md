@@ -1,0 +1,1 @@
+Rigorous coupled-wave analysis based on paper ["Three-dimensional (vector) rigorous coupled-wave analysis of anisotropic grating diffraction", JOSA A, 7(8), 1990]
