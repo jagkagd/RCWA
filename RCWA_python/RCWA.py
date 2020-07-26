@@ -345,16 +345,16 @@ class LiquidCrylstalRCWA():
         UVkiiym = UVkiixym[1::2]
 
         SI = np.asarray(np.bmat([
-            [diag(UVkiixm @ Ei), ZERO], 
-            [ZERO, diag(UVkiiym @ Ei)]
+            [diag(delta * (UVkiixm @ Ei)), ZERO], 
+            [ZERO, diag(delta * (UVkiiym @ Ei))]
         ]))
         SR = np.asarray(np.bmat([
             [SRlxm, SRrxm],
             [SRlym, SRrym]
         ]))
         UI = n1 * np.asarray(np.bmat([
-            [diag(UVkiixm @ II @ Ei), ZERO], 
-            [ZERO, diag(UVkiiym @ II @ Ei)]
+            [diag(delta * (UVkiixm @ II @ Ei)), ZERO], 
+            [ZERO, diag(delta * (UVkiiym @ II @ Ei))]
         ]))
         UR = np.asarray(np.bmat([
             [URlxm, URrxm],
@@ -432,23 +432,31 @@ class LiquidCrylstalRCWA():
             else:
                 k3iv[i][-1] = -1j*sqrt(-k3k**2 + kx**2 + ky**2)
 
-        Ts = self.getLayerT(self.n1, k0k, kiv)
-        T0 = [self.getIn(k1iv, Ei)]
-        Te = [self.getOut(k3iv)]
+        Tl = sum(self.getLayerT(self.n1, k0k, kiv), [])
+        T0 = self.getIn(k1iv, Ei)
+        Te = self.getOut(k3iv)
+        Ts = (T0 + Tl + Te)[1:-1]
 
-        Tm = sum(T0 + Ts + Te, [])[1:-1]
-        Smatrixs = []
-        for i in range(0, len(Tm), 2):
-            Smatrixs.append(makeTm(Tm[i], Tm[i+1]))
-        res1 = Smatrixs[0]
-        for S in Smatrixs[1:]:
-            res1 = redheffer(res1, S)
+        ZERO = np.zeros((2*self.M, 2*self.M), dtype=np.complex)
+
+        res = [0]*len(Ts)
+        for i in range(0, len(Ts), 2):
+            A, Wm, B, Vm = Ts[i]
+            Wp, E, Vp, D = Ts[i+1]
+            ZEROS = [ZERO, ZERO]
+            res[i]   = ZEROS*(i//2) + [A, Wm, -Wp, -E] + ZEROS*(len(Ts)//2-1-i//2)
+            res[i+1] = ZEROS*(i//2) + [B, Vm, -Vp, -D] + ZEROS*(len(Ts)//2-1-i//2)
+        P = np.asarray(np.bmat(res))[:, (self.M*2):(-2*self.M)]
         delta = self.ms == 0
-        # print(Smatrixs)
 
-        c0 = np.hstack([delta, delta])
-        tlv, trv = split(array(res1[0]) @ c0, 2)
-        rlv, rrv = split(array(res1[2]) @ c0, 2)
+        SI, _, UI, _ = T0[1]
+        p = np.asarray(np.bmat(
+            [-np.diag(SI), -np.diag(UI)] + 
+            [np.diag(ZERO)] * 2 * len(self.layers)
+        )).flatten()
+        res = linsolve(P, p)
+        rlv, rrv = split(res[:2*self.M], 2)
+        tlv, trv = split(res[-2*self.M:], 2)
 
         self.DERl = -abs(rlv)**2 * real(k1iv[:, -1])/kiv[-1]
         self.DERr = -abs(rrv)**2 * real(k1iv[:, -1])/kiv[-1]
@@ -506,8 +514,8 @@ for wl in wls:
     # Kz = 2*k0*ng*cos(np.deg2rad(alpha))*cos(np.deg2rad(alpha))
     # lay = PVG2(5e-6, Kx, Kz, 1, no, ne)
     # lay = VHG(5e-6, ng, 0.5, alpha, pb/2)
-    rcwa = LiquidCrylstalRCWA(ng, ng, [lay1, lay2, lay3], nn, [1, 1j], [1j, 1])
-    derl, derr, detl, detr = rcwa.solve(0, 0, wl, 1, 0)
+    rcwa = LiquidCrylstalRCWA(ng, ng, [lay1, lay2], nn, [1, 1j], [1j, 1])
+    derl, derr, detl, detr = rcwa.solve(0, 0, wl, 1, 1j)
     DERl.append(derl)
     DERr.append(derr)
     DETl.append(detl)
