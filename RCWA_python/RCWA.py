@@ -50,10 +50,42 @@ def k2uv_xy(k):
             [0, 1]
         ], dtype=np.complex)
 
+def normW(W):
+    W2 = np.zeros_like(W, dtype=np.complex)
+    for i, w in enumerate(W.T): 
+        W2[:, i] = (w.T/np.sum(w*w.conj())).copy()
+    return W2
+
+def redheffer(L, M):
+    tlp, rlm, rlp, tlm = L
+    trp, rrm, rrp, trm = M
+    II = np.eye(len(tlp))
+    iv1 = inv(II - rlm @ rrp)
+    iv2 = inv(II - rrp @ rlm)
+    return (
+        trp @ iv1 @ tlp, rrm + trp @ iv1 @ rlm @ trm, 
+        rlp + tlm @ iv2 @ rrp @ tlp, tlm @ iv2 @ trm
+        )
+
+def makeTm(L, M):
+    A, Wm, B, Vm = L
+    Wp, E, Vp, D = M
+    temp1 = Wm @ inv(Vm)
+    temp2 = Wp @ inv(Vp)
+    iv1 = inv(Wp - temp1 @ Vp)
+    iv2 = inv(Wm - temp2 @ Vm)
+    return [
+        iv1 @ (A - temp1 @ B), 
+        iv1 @ (temp1 @ D - E),
+        iv2 @ (temp2 @ B - A), 
+        iv2 @ (E - temp2 @ D)
+    ]
+
 class Layer():
-    def __init__(self):
+    def __init__(self, d):
         self.Kx = 0
         self.Kz = 0
+        self.d = d
         self.Kv = array([0, 0, 0])
 
     def eps(self, p, q, n):
@@ -126,12 +158,46 @@ class Layer():
             [A41m, A42m, A43m, A44m]
         ])).round(10)
         return A
+    
+    def getQW(self, m, k0, kiv):
+        A = self.getA(m, k0, kiv)
+        q, W = eig(A)
+        W = normW(W)
+        Q = 1.j * k0 * q.round(12)
+        pPredict = np.imag(Q) <= 0
+        mPredict = np.imag(Q) > 0
+        Qp, Qm = Q[pPredict], Q[mPredict]
+        WVp, WVm = W[:, pPredict], W[:, mPredict]
+        M = len(WVp)
+        Wp, Vp = WVp[:M//2], WVp[M//2:]
+        Wm, Vm = WVm[:M//2], WVm[M//2:]
+        return (Qp, Qm, Wp, Vp, Wm, Vm)
+    
+    def getTm(self, m, k0, kiv):
+        d = self.d
+        ms = np.arange(-m, m+1)
+        Qp, Qm, Wp, Vp, Wm, Vm = self.getQW(m, k0, kiv)
+        K = lambda z: diag(exp(-1j*np.hstack([-ms*self.Kz, -ms*self.Kz])*z))
+        Xp = lambda z: diag(exp(Qp*z))
+        Xm = lambda z: diag(exp(Qm*z))
+        A = K(d) @ Wp @ Xp(d)
+        B = K(d) @ Vp @ Xp(d)
+        E = K(-d) @ Wm @ Xm(-d)
+        D = K(-d) @ Vm @ Xm(-d)
+        return [(Wp, E, Vp, D), (A, Wm, B, Vm)]
+    
+    
+    def getSymTm(self, n1, m, k0, kiv):
+        L = Homo(0, n1).getTm(m, k0, kiv)[1]
+        M = self.getTm(m, k0, kiv)[0]
+        temp1 = makeTm(L, M)
+        return redheffer(temp1, temp1[::-1])
 
 class Homo(Layer):
     def __init__(self, d, n):
-        super().__init__()
-        self.d = d
+        super().__init__(d)
         self.n = n
+        self.Kx = 0
 
     def eps(self, p, q, n):
         if n == 0 and p == q:
@@ -141,8 +207,7 @@ class Homo(Layer):
 
 class VHG(Layer):
     def __init__(self, d, n, dn, delta, period):
-        super().__init__()
-        self.d = d
+        super().__init__(d)
         self.n = n
         self.dn = dn
         self.period = period
@@ -165,8 +230,7 @@ class VHG(Layer):
 
 class AnisHomo(Layer):
     def __init__(self, d, exx, exy, exz, eyy, eyz, ezz):
-        super().__init__()
-        self.d = d
+        super().__init__(d)
         self.epsv = [[exx, exy, exz], [0, eyy, eyz], [0, 0, ezz]]
     
     def eps(self, p, q, n):
@@ -175,51 +239,9 @@ class AnisHomo(Layer):
         else:
             return 0
 
-class SinGrating(Layer):
-    def __init__(self, d):
-        super().__init__()
-        self.d = d
-        self.pitch = 1.02350e-6
-        self.delta = deg2rad(84.071) # angle (rad) between z axis
-        self.K = 2*pi/(self.pitch)
-        self.Kx = self.K*sin(self.delta)
-        self.Kz = self.K*cos(self.delta)
-        self.no = 2.3370
-        self.ne = 2.2425
-        self.eo = no**2
-        self.ee = ne**2
-        self.Kv = array([self.Kx, 0, self.Kz])
-    
-    def eps(self, p, q, n):
-        eo, ee, delta = self.eo, self.ee, self.delta
-        r13 = 10e-12
-        r33 = 32.2e-12
-        r22 = 6.7e-12
-        r51 = 32e-12
-        E0 = 0.494e6
-        r11p_ = r33*self.ne**4*sin(delta)*E0
-        r22p = r13*self.no**4*sin(delta)*E0
-        r12p = r51*self.no**2*self.ne**2*cos(delta)*E0
-        r23p = r22*self.no**4*cos(delta)*E0
-
-        r11p = 4e-4
-
-        exx = lambda Kr: ee - r11p*sin(Kr)
-        exy = lambda Kr: 0
-        exz = lambda Kr: r12p*sin(Kr)
-        eyy = lambda Kr: eo-r22p*sin(Kr)
-        eyz = lambda Kr: r23p*sin(Kr)
-        ezz = eyy
-        es = [[exx, exy, exz], [0, eyy, eyz], [0, 0, ezz]]
-
-        ejkn = lambda Kr: 1/(2*pi) * exp(-1.j*n*Kr)
-
-        return cquad(lambda Kr: es[p][q](Kr)*ejkn(Kr), -pi, pi)[0]
-
 class PVG(Layer):
     def __init__(self, d, pitch, delta, chi, no, ne):
-        super().__init__()
-        self.d = d
+        super().__init__(d)
         self.pitch = pitch # LC rotate 2pi (m)
         self.period = pitch / 2 # period of grating, LC rotate pi (m)
         self.delta = deg2rad(delta) # angle (rad) between z axis
@@ -252,8 +274,7 @@ class PVG(Layer):
 
 class PVG2(Layer):
     def __init__(self, d, Kx, Kz, chi, no, ne):
-        super().__init__()
-        self.d = d
+        super().__init__(d)
         self.chi = chi # chirality
         self.no = no
         self.ne = ne
@@ -274,7 +295,7 @@ class PVG2(Layer):
         eps = [[exx, exy, exz], [exy, eyy, eyz], [exz, eyz, ezz]]
         return eps[p][q](n)
 
-class RCWA():
+class LiquidCrylstalRCWA():
     '''
     epsilon = \sum epsilon \exp(1j*m*K*r)
     '''
@@ -287,66 +308,19 @@ class RCWA():
         self.ms = np.arange(-m, m+1)
         self.M = len(self.ms)
         self.layers = layers
-        if isinstance(layers, list):
-            pxs = [layer.px for layer in self.layers]
-            if not np.all(pxs == pxs[0]):
-                raise("All layers should have the same x period.")
+        Kxs = np.array([layer.Kx for layer in self.layers])
+        if not np.all(Kxs == Kxs[0]):
+            raise Exception("All layers should have the same x period.")
+        self.lKx = Kxs[0]
     
-    def getLayerQW(self, k0, kiv):
-        '''
-        A = W @ diag(q) @ inv(W)
-        '''
-        def normW(W):
-            W2 = np.zeros_like(W, dtype=np.complex)
-            for i, w in enumerate(W.T): 
-                W2[:, i] = (w.T/np.sum(w*w.conj())).copy()
-            return W2
+    def getLayerT(self, n1, k0, kiv):
+        return [layer.getTm(self.m, k0, kiv) for layer in self.layers]
 
-        if isinstance(self.layers, list):
-            Ams = [layer.getA(self.m, k0, kiv) for layer in self.layers]
-            qWs = [eig(Am) for Am in Ams]
-            return [[1.j * k0 * q.round(12), normW(W).round(12)] for (q, W) in qWs]
-        else:
-            Am = self.layers.getA(self.m, k0, kiv)
-            q, W = eig(Am)
-            return (1.j * k0 * q.round(12), W)
-
-    # @pysnooper.snoop(max_variable_length=None)
-    def solve(self, phi, theta, wl, Eu, Ev):
-        '''
-        phi: projected angle between x axis in x-y plane 
-        theta: angle between z axis
-        light to z+
-        '''
-        self.phi = deg2rad(phi)
-        self.theta = deg2rad(theta)
-        self.k1uv = array([
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 2),
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 2),
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 2, 2)
-        ])
-
-        self.DERl = np.zeros(self.M)
-        self.DERr = np.zeros_like(self.DERl)
-        self.DETl = np.zeros_like(self.DERl)
-        self.DETr = np.zeros_like(self.DERl)
-        n1, n3 = self.n1, self.n3
-        Ei = norml(array([Eu, Ev]))
-        k0k = 2*pi/wl
-        k0v = self.k1uv * k0k
-        kiv = k0v * n1
-        k1k = k0k * n1
-        k3k = k0k * n3
-        Q, W = self.getLayerQW(k0k, kiv)
-
-        k1iv = array([kiv-i*self.layers.Kv for i in self.ms], dtype=np.complex)
+    def getIn(self, k1iv, Ei):
         II = array([[0, -1], [1, 0]])
-        for i in range(len(k1iv)):
-            kx, ky, _ = k1iv[i]
-            if kx**2 + ky**2 <= k1k**2:
-                k1iv[i][-1] = -sqrt(k1k**2 - kx**2 - ky**2)
-            else:
-                k1iv[i][-1] = 1j*sqrt(-k1k**2 + kx**2 + ky**2)
+        ZERO = np.zeros((self.M, self.M))
+        n1 = self.n1
+
         UVk1ixym = np.vstack([k2uv_xy(k1v) for k1v in k1iv])
         UVk1ixm = UVk1ixym[::2]
         UVk1iym = UVk1ixym[1::2]
@@ -359,13 +333,40 @@ class RCWA():
         URrxm = n1 * diag(UVk1ixm @ II @ self.base2)
         URrym = n1 * diag(UVk1iym @ II @ self.base2)
 
-        k3iv = array([kiv-i*self.layers.Kv for i in self.ms], dtype=np.complex)
-        for i in range(len(k3iv)):
-            kx, ky, _ = k3iv[i]
-            if kx**2 + ky**2 <= k3k**2:
-                k3iv[i][-1] = sqrt(k3k**2 - kx**2 - ky**2)
-            else:
-                k3iv[i][-1] = -1j*sqrt(-k3k**2 + kx**2 + ky**2)
+        kuvxy = array([
+            [eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 0), 
+             eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 1)], 
+            [eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 0), 
+             eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 1)]
+        ])
+        delta = self.ms == 0
+        UVkiixym = np.vstack([kuvxy]*self.M)
+        UVkiixm = UVkiixym[::2]
+        UVkiiym = UVkiixym[1::2]
+
+        SI = np.asarray(np.bmat([
+            [diag(UVkiixm @ Ei), ZERO], 
+            [ZERO, diag(UVkiiym @ Ei)]
+        ]))
+        SR = np.asarray(np.bmat([
+            [SRlxm, SRrxm],
+            [SRlym, SRrym]
+        ]))
+        UI = n1 * np.asarray(np.bmat([
+            [diag(UVkiixm @ II @ Ei), ZERO], 
+            [ZERO, diag(UVkiiym @ II @ Ei)]
+        ]))
+        UR = np.asarray(np.bmat([
+            [URlxm, URrxm],
+            [URlym, URrym]
+        ]))
+        return [(0, 0, 0, 0), (SI, SR, UI, UR)]
+    
+    def getOut(self, k3iv):
+        II = array([[0, -1], [1, 0]])
+        ZERO = np.zeros((self.M, self.M))
+        n3 = self.n3
+
         UVk3ixym = np.vstack([k2uv_xy(k3v) for k3v in k3iv])
         UVk3ixm = UVk3ixym[::2]
         UVk3iym = UVk3ixym[1::2]
@@ -377,76 +378,98 @@ class RCWA():
         UTlym = n3 * diag(UVk3iym @ II @ self.base1)
         UTrxm = n3 * diag(UVk3ixm @ II @ self.base2)
         UTrym = n3 * diag(UVk3iym @ II @ self.base2)
-
-        d = self.layers.d
-        kziv = array([-i*self.layers.Kv[-1] for i in self.ms])
-
-        ZERO = np.zeros((self.M, self.M))
-        pPredict = np.imag(Q) <= 0
-        mPredict = np.imag(Q) > 0
-        Qp, Qm = Q[pPredict], Q[mPredict]
-        Wp, Wm = W[:, pPredict], W[:, mPredict]
-        eQpzm = lambda z: diag(exp(Qp*z))
-        eQmzm = lambda z: diag(exp(Qm*(z-d)))
-        ekiz = lambda z: diag(exp(-1j*kziv*z))
-        Wsxm0, Wsym0, Wuxm0, Wuym0 = split(Wp, 4)
-        Wsxm1, Wsym1, Wuxm1, Wuym1 = split(Wm, 4)
-        Wsxm, Wsym, Wuxm, Wuym = [Wsxm0, Wsxm1], [Wsym0, Wsym1], [Wuxm0, Wuxm1], [Wuym0, Wuym1]
-        Wm = lambda Wm, z: ekiz(z) @ np.hstack([Wm[0] @ eQpzm(z), ekiz(-d) @ Wm[1] @ eQmzm(z)])
-
-        P = np.asarray(np.bmat([
-            [SRlxm, SRrxm, ZERO,  ZERO,  -Wm(Wsxm, 0)],
-            [SRlym, SRrym, ZERO,  ZERO,  -Wm(Wsym, 0)],
-            [ZERO,  ZERO,  STlxm, STrxm, -Wm(Wsxm, d)],
-            [ZERO,  ZERO,  STlym, STrym, -Wm(Wsym, d)],
-            [URlxm, URrxm, ZERO,  ZERO,  -Wm(Wuxm, 0)],
-            [URlym, URrym, ZERO,  ZERO,  -Wm(Wuym, 0)],
-            [ZERO,  ZERO,  UTlxm, UTrxm, -Wm(Wuxm, d)],
-            [ZERO,  ZERO,  UTlym, UTrym, -Wm(Wuym, d)],
+        ST = np.asarray(np.bmat([
+            [STlxm, STrxm],
+            [STlym, STrym]
         ]))
-        # print(P.shape)
+        UT = np.asarray(np.bmat([
+            [UTlxm, UTrxm],
+            [UTlym, UTrym]
+        ]))
+        ZERO2 = np.zeros((2*self.M, 2*self.M))
+        return [(ST, ZERO2, UT, ZERO2), (0, 0, 0, 0)]
 
-        kuvxy = array([
-            [eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 0), 
-             eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 1)], 
-            [eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 0), 
-             eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 1)]
+    # @pysnooper.snoop(max_variable_length=None)
+    def solve(self, phi, theta, wl, Eu, Ev):
+        '''
+        phi: projected angle between x axis in x-y plane 
+        theta: angle between z axis
+        light to z+
+        '''
+        self.phi = deg2rad(phi)
+        self.theta = deg2rad(theta)
+        self.k0uv = array([
+            eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 2),
+            eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 2),
+            eulerMatrix('zyz', [self.phi, self.theta, 0], 2, 2)
         ])
+
+        self.DERl = np.zeros(self.M)
+        self.DERr = np.zeros_like(self.DERl)
+        self.DETl = np.zeros_like(self.DERl)
+        self.DETr = np.zeros_like(self.DERl)
+        n1, n3 = self.n1, self.n3
+        Ei = norml(array([Eu, Ev]))
+        k0k = 2*pi/wl
+        k0v = self.k0uv * k0k
+        kiv = k0v * n1
+        k1k = k0k * n1
+        k3k = k0k * n3
+
+        k1iv = array([kiv-i*np.r_[self.lKx, 0, 0] for i in self.ms], dtype=np.complex)
+        for i in range(len(k1iv)):
+            kx, ky, _ = k1iv[i]
+            if kx**2 + ky**2 <= k1k**2:
+                k1iv[i][-1] = -sqrt(k1k**2 - kx**2 - ky**2)
+            else:
+                k1iv[i][-1] = 1j*sqrt(-k1k**2 + kx**2 + ky**2)
+
+        k3iv = array([kiv-i*np.r_[self.lKx, 0, 0] for i in self.ms], dtype=np.complex)
+        for i in range(len(k3iv)):
+            kx, ky, _ = k3iv[i]
+            if kx**2 + ky**2 <= k3k**2:
+                k3iv[i][-1] = sqrt(k3k**2 - kx**2 - ky**2)
+            else:
+                k3iv[i][-1] = -1j*sqrt(-k3k**2 + kx**2 + ky**2)
+
+        Ts = self.getLayerT(self.n1, k0k, kiv)
+        T0 = [self.getIn(k1iv, Ei)]
+        Te = [self.getOut(k3iv)]
+
+        Tm = sum(T0 + Ts + Te, [])[1:-1]
+        Smatrixs = []
+        for i in range(0, len(Tm), 2):
+            Smatrixs.append(makeTm(Tm[i], Tm[i+1]))
+        res1 = Smatrixs[0]
+        for S in Smatrixs[1:]:
+            res1 = redheffer(res1, S)
         delta = self.ms == 0
-        UVkiixym = np.vstack([kuvxy]*self.M)
-        UVkiixm = UVkiixym[::2]
-        UVkiiym = UVkiixym[1::2]
-        ZERO = zeros(self.M)
-        p = array([
-            -1 * delta * (UVkiixm @ Ei),
-            -1 * delta * (UVkiiym @ Ei),
-            ZERO,
-            ZERO,
-            -1 * delta * n1 * (UVkiixm @ II @ Ei),
-            -1 * delta * n1 * (UVkiiym @ II @ Ei),
-            ZERO,
-            ZERO
-        ]).flatten()
-        res = linsolve(P, p)
-        rlv, rrv, tlv, trv, csxv, csyv, cuxv, cuyv = split(res, 8)
+        # print(Smatrixs)
+
+        c0 = np.hstack([delta, delta])
+        tlv, trv = split(array(res1[0]) @ c0, 2)
+        rlv, rrv = split(array(res1[2]) @ c0, 2)
+
         self.DERl = -abs(rlv)**2 * real(k1iv[:, -1])/kiv[-1]
         self.DERr = -abs(rrv)**2 * real(k1iv[:, -1])/kiv[-1]
-        self.DETl = abs(tlv)**2 * real(k3iv[:, -1])/kiv[-1]
-        self.DETr = abs(trv)**2 * real(k3iv[:, -1])/kiv[-1]
+        self.DETl =  abs(tlv)**2 * real(k3iv[:, -1])/kiv[-1]
+        self.DETr =  abs(trv)**2 * real(k3iv[:, -1])/kiv[-1]
+        self.k1iv = k1iv/k0k
+        self.k3iv = k3iv/k0k
         #print(k1iv, k3iv)
         return self.DERl, self.DERr, self.DETl, self.DETr
     
-ng = 1.56
+ng = 1.58
 dn = 0.15
 no = (dn + 2*sqrt(-2*dn**2 + 9*ng**2))/6. - dn/2
 ne = (dn + 2*sqrt(-2*dn**2 + 9*ng**2))/6. + dn/2
 # ng = sqrt((2*no**2+ne**2)/3)
-alpha = 45/2
+alpha = 60/2
 k0 = 2*pi/532e-9
 pb = 2 * 2*pi/(2*k0*ng*cos(np.deg2rad(alpha)))
 
-wls = np.linspace(400, 700, 201)*1e-9
-#wls = [532e-9]
+wls = np.linspace(400, 700, 301)*1e-9
+# wl = 532e-9
 thetas = np.linspace(0, 60, 61)
 phis = np.linspace(0, 359, 360)
 # alphas = [0]
@@ -454,12 +477,26 @@ DERl = []
 DERr = []
 DETl = []
 DETr = []
+DERl2 = []
+DERr2 = []
+DETl2 = []
+DETr2 = []
+k1iv = []
+k3iv = []
 DE = []
 nn = 1
 ds = np.linspace(0, 5, 101)*1e-6
 # for d in ds:
+lay1 = PVG(5e-6, pb, alpha, 1, no, ne)
+lay2 = PVG(5e-6, pb, alpha, -1, no, ne) 
+lay3 = PVG(0e-6, pb, alpha, -1, no, ne)
+lay4 = Homo(0, ng)
 for wl in wls:
     # for theta in thetas:
+    # DERl0 = []
+    # DERr0 = []
+    # DETl0 = []
+    # DETr0 = []
     # for phi in phis:
     # for alpha in alphas/2:
     #lay = AnisHomo(5e-6, 1.5, 1, 2, 2.5, 3., 3.5)
@@ -468,18 +505,19 @@ for wl in wls:
     # Kx = 2*k0*ng*cos(np.deg2rad(alpha))*sin(np.deg2rad(alpha))
     # Kz = 2*k0*ng*cos(np.deg2rad(alpha))*cos(np.deg2rad(alpha))
     # lay = PVG2(5e-6, Kx, Kz, 1, no, ne)
-    lay = PVG(5e-6, pb, alpha, 1, no, ne)
     # lay = VHG(5e-6, ng, 0.5, alpha, pb/2)
-    rcwa = RCWA(ng, ng, lay, nn, [1, 1j], [1, -1j])
-    derl, derr, detl, detr = rcwa.solve(0, -10, wl, 1, 1j)
+    rcwa = LiquidCrylstalRCWA(ng, ng, [lay1, lay2, lay3], nn, [1, 1j], [1j, 1])
+    derl, derr, detl, detr = rcwa.solve(0, 0, wl, 1, 0)
     DERl.append(derl)
     DERr.append(derr)
     DETl.append(detl)
     DETr.append(detr)
-    # DERl2.append(derl2)
-    # DERr2.append(derr2)
-    # DETl2.append(detl2)
-    # DETr2.append(detr2)
+    k1iv.append(rcwa.k1iv)
+    k3iv.append(rcwa.k3iv)
+    # # DERl2.append(derl2)
+    # # DERr2.append(derr2)
+    # # DETl2.append(detl2)
+    # # DETr2.append(detr2)
     # DERl.append(array(DERl0))
     # DERr.append(array(DERr0))
     # DETl.append(array(DETl0))
@@ -489,24 +527,53 @@ DERl = array(DERl).T
 DERr = array(DERr).T
 DETl = array(DETl).T
 DETr = array(DETr).T
+k1iv = array(k1iv).T
+k3iv = array(k3iv).T
 
 xxs = wls
-plt.subplot(211)
+plt.subplot(221)
 plt.plot(xxs, DERl[nn], 'r')
-plt.plot(xxs, DERl[nn-1], 'g')
-plt.plot(xxs, DERl[nn+1], 'b')
 plt.plot(xxs, DERr[nn], 'r--')
-plt.plot(xxs, DERr[nn-1], 'g--')
-plt.plot(xxs, DERr[nn+1], 'b--')
-plt.plot(xxs, DERl[nn+1]/(DERl[nn+1]+DETl[nn]), 'k')
+if nn > 0:
+    plt.plot(xxs, DERl[nn-1], 'g')
+    plt.plot(xxs, DERl[nn+1], 'b')
+    plt.plot(xxs, DERr[nn-1], 'g--')
+    plt.plot(xxs, DERr[nn+1], 'b--')
+    plt.plot(xxs, DERl[nn+1]/(DERl[nn+1]+DETl[nn]), 'k')
+plt.ylim(0, 1.5)
 # plt.plot(wls,  DERr[nn]+DERl[nn], 'y')
-plt.subplot(212)
+plt.subplot(222)
 plt.plot(xxs,  DETl[nn], 'r')
-plt.plot(xxs,  DETl[nn-1], 'g')
-plt.plot(xxs,  DETl[nn+1], 'b')
 plt.plot(xxs,  DETr[nn], 'r--')
-plt.plot(xxs,  DETr[nn-1], 'g--')
-plt.plot(xxs,  DETr[nn+1], 'b--')
+if nn > 0:
+    plt.plot(xxs,  DETl[nn-1], 'g')
+    plt.plot(xxs,  DETl[nn+1], 'b')
+    plt.plot(xxs,  DETr[nn-1], 'g--')
+    plt.plot(xxs,  DETr[nn+1], 'b--')
+plt.ylim(0, 1.5)
+plt.subplot(223)
+plt.plot(xxs, np.abs(k1iv[nn, 0]), 'r')
+plt.plot(xxs, np.abs(k1iv[nn, 1]), 'r--')
+plt.plot(xxs, np.abs(k1iv[nn, 2]), 'r.')
+if nn > 0:
+    plt.plot(xxs, np.abs(k1iv[nn-1, 0]), 'g')
+    plt.plot(xxs, np.abs(k1iv[nn-1, 1]), 'g--')
+    plt.plot(xxs, np.abs(k1iv[nn-1, 2]), 'g.')
+    plt.plot(xxs, np.abs(k1iv[nn+1, 0]), 'b')
+    plt.plot(xxs, np.abs(k1iv[nn+1, 1]), 'b--')
+    plt.plot(xxs, np.abs(k1iv[nn+1, 2]), 'b.')
+# plt.plot(wls,  DERr[nn]+DERl[nn], 'y')
+plt.subplot(224)
+plt.plot(xxs, np.abs(k3iv[nn, 0]), 'r')
+plt.plot(xxs, np.abs(k3iv[nn, 1]), 'r--')
+plt.plot(xxs, np.abs(k3iv[nn, 2]), 'r.')
+if nn > 0:
+    plt.plot(xxs, np.abs(k3iv[nn-1, 0]), 'g')
+    plt.plot(xxs, np.abs(k3iv[nn-1, 1]), 'g--')
+    plt.plot(xxs, np.abs(k3iv[nn-1, 2]), 'g.')
+    plt.plot(xxs, np.abs(k3iv[nn+1, 0]), 'b')
+    plt.plot(xxs, np.abs(k3iv[nn+1, 1]), 'b--')
+    plt.plot(xxs, np.abs(k3iv[nn+1, 2]), 'b.')
 plt.show()
 
 # plt.subplot(211)

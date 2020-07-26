@@ -1,7 +1,8 @@
 classdef RCWA
 properties
     n1, n3, base1, base2, m, ms, M, layers,
-    phi, theta, k1uv, DERl, DERr, DETl, DETr
+    phi, theta, k1uv, DERl, DERr, DETl, DETr,
+    k1iv, k3iv
 end
 methods
     % epsilon = \sum epsilon \exp(1j.*m.*K.*r)
@@ -25,7 +26,7 @@ methods
         q = 1.j .* k0 .* round(diag(q), 12);
     end
 
-    function [DERl, DERr, DETl, DETr] = solve(obj, phi, theta, wl, Eu, Ev)
+    function [DERl, DERr, DETl, DETr, obj] = solve(obj, phi, theta, wl, Eu, Ev)
         % phi: projected angle between x axis in x-y plane 
         % theta: angle between z axis
         % wl: wavelength unit: m
@@ -181,6 +182,8 @@ methods
         obj.DERr = -abs(rrv).^2 .* real(k1iv(1:end, end))./kiv(end);
         obj.DETl =  abs(tlv).^2 .* real(k3iv(1:end, end))./kiv(end);
         obj.DETr =  abs(trv).^2 .* real(k3iv(1:end, end))./kiv(end);
+        obj.k1iv = k1iv;
+        obj.k3iv = k3iv;
         DERl = obj.DERl;
         DERr = obj.DERr;
         DETl = obj.DETl;
