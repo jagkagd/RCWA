@@ -1,11 +1,8 @@
-import scipy as S
-from scipy.spatial.transform import Rotation as R
 from scipy.linalg import eig, inv, solve as linsolve
 from scipy.integrate import quad
 from numpy import array, split, zeros, sin, cos, tan, pi, diag, sqrt, deg2rad, exp, real
 from numpy import arctan2 as atan2, arccos as acos, arcsin as asin
 import numpy as np
-import pysnooper
 import matplotlib.pyplot as plt
 import matplotlib
 
@@ -56,31 +53,6 @@ def normW(W):
         W2[:, i] = (w.T/np.sum(w*w.conj())).copy()
     return W2
 
-def redheffer(L, M):
-    tlp, rlm, rlp, tlm = L
-    trp, rrm, rrp, trm = M
-    II = np.eye(len(tlp))
-    iv1 = inv(II - rlm @ rrp)
-    iv2 = inv(II - rrp @ rlm)
-    return (
-        trp @ iv1 @ tlp, rrm + trp @ iv1 @ rlm @ trm, 
-        rlp + tlm @ iv2 @ rrp @ tlp, tlm @ iv2 @ trm
-        )
-
-def makeTm(L, M):
-    A, Wm, B, Vm = L
-    Wp, E, Vp, D = M
-    temp1 = Wm @ inv(Vm)
-    temp2 = Wp @ inv(Vp)
-    iv1 = inv(Wp - temp1 @ Vp)
-    iv2 = inv(Wm - temp2 @ Vm)
-    return [
-        iv1 @ (A - temp1 @ B), 
-        iv1 @ (temp1 @ D - E),
-        iv2 @ (temp2 @ B - A), 
-        iv2 @ (E - temp2 @ D)
-    ]
-
 class Layer():
     def __init__(self, d):
         self.Kx = 0
@@ -101,7 +73,6 @@ class Layer():
                 res[i][j] = self.eps(p, q, i-j)
         return res.round(12)
     
-    # @pysnooper.snoop(max_variable_length=None)
     def getA(self, m, k0, ki):
         '''
         K = [Kx, 0, Kz]
@@ -127,9 +98,8 @@ class Layer():
         eyzm = self.epsm(1, 2, mn)
         ezzm = self.epsm(2, 2, mn)
         ezzm_1 = inv(ezzm).round(12)
-        #exxm_1 = self.epsxx1m(mn)
+        # exxm_1 = self.epsxx1m(mn)
         # exxm_1_1 = inv(exxm_1).round(12)
-        # print('exxm ', exxm, 'exxm_1 ', exxm_1, 'exxm_1_1 ', exxm_1_1)
 
         A11m = kzim + kxim @ ezzm_1 @ exzm
         A12m =  kxim @ ezzm_1 @ eyzm
@@ -186,13 +156,6 @@ class Layer():
         D = K(-d) @ Vm @ Xm(-d)
         return [(Wp, E, Vp, D), (A, Wm, B, Vm)]
     
-    
-    def getSymTm(self, n1, m, k0, kiv):
-        L = Homo(0, n1).getTm(m, k0, kiv)[1]
-        M = self.getTm(m, k0, kiv)[0]
-        temp1 = makeTm(L, M)
-        return redheffer(temp1, temp1[::-1])
-
 class Homo(Layer):
     def __init__(self, d, n):
         super().__init__(d)
@@ -389,7 +352,6 @@ class LiquidCrylstalRCWA():
         ZERO2 = np.zeros((2*self.M, 2*self.M))
         return [(ST, ZERO2, UT, ZERO2), (0, 0, 0, 0)]
 
-    # @pysnooper.snoop(max_variable_length=None)
     def solve(self, phi, theta, wl, Eu, Ev):
         '''
         phi: projected angle between x axis in x-y plane 
@@ -464,7 +426,6 @@ class LiquidCrylstalRCWA():
         self.DETr =  abs(trv)**2 * real(k3iv[:, -1])/kiv[-1]
         self.k1iv = k1iv/k0k
         self.k3iv = k3iv/k0k
-        #print(k1iv, k3iv)
         return self.DERl, self.DERr, self.DETl, self.DETr
     
 ng = 1.58
@@ -514,7 +475,7 @@ for wl in wls:
     # Kz = 2*k0*ng*cos(np.deg2rad(alpha))*cos(np.deg2rad(alpha))
     # lay = PVG2(5e-6, Kx, Kz, 1, no, ne)
     # lay = VHG(5e-6, ng, 0.5, alpha, pb/2)
-    rcwa = LiquidCrylstalRCWA(ng, ng, [lay1, lay2], nn, [1, 1j], [1j, 1])
+    rcwa = LiquidCrylstalRCWA(ng, ng, [lay1], nn, [1, 1j], [1j, 1])
     derl, derr, detl, detr = rcwa.solve(0, 0, wl, 1, 1j)
     DERl.append(derl)
     DERr.append(derr)
@@ -539,7 +500,7 @@ k1iv = array(k1iv).T
 k3iv = array(k3iv).T
 
 xxs = wls
-plt.subplot(221)
+plt.subplot(121)
 plt.plot(xxs, DERl[nn], 'r')
 plt.plot(xxs, DERr[nn], 'r--')
 if nn > 0:
@@ -550,7 +511,7 @@ if nn > 0:
     plt.plot(xxs, DERl[nn+1]/(DERl[nn+1]+DETl[nn]), 'k')
 plt.ylim(0, 1.5)
 # plt.plot(wls,  DERr[nn]+DERl[nn], 'y')
-plt.subplot(222)
+plt.subplot(122)
 plt.plot(xxs,  DETl[nn], 'r')
 plt.plot(xxs,  DETr[nn], 'r--')
 if nn > 0:
@@ -559,29 +520,6 @@ if nn > 0:
     plt.plot(xxs,  DETr[nn-1], 'g--')
     plt.plot(xxs,  DETr[nn+1], 'b--')
 plt.ylim(0, 1.5)
-plt.subplot(223)
-plt.plot(xxs, np.abs(k1iv[nn, 0]), 'r')
-plt.plot(xxs, np.abs(k1iv[nn, 1]), 'r--')
-plt.plot(xxs, np.abs(k1iv[nn, 2]), 'r.')
-if nn > 0:
-    plt.plot(xxs, np.abs(k1iv[nn-1, 0]), 'g')
-    plt.plot(xxs, np.abs(k1iv[nn-1, 1]), 'g--')
-    plt.plot(xxs, np.abs(k1iv[nn-1, 2]), 'g.')
-    plt.plot(xxs, np.abs(k1iv[nn+1, 0]), 'b')
-    plt.plot(xxs, np.abs(k1iv[nn+1, 1]), 'b--')
-    plt.plot(xxs, np.abs(k1iv[nn+1, 2]), 'b.')
-# plt.plot(wls,  DERr[nn]+DERl[nn], 'y')
-plt.subplot(224)
-plt.plot(xxs, np.abs(k3iv[nn, 0]), 'r')
-plt.plot(xxs, np.abs(k3iv[nn, 1]), 'r--')
-plt.plot(xxs, np.abs(k3iv[nn, 2]), 'r.')
-if nn > 0:
-    plt.plot(xxs, np.abs(k3iv[nn-1, 0]), 'g')
-    plt.plot(xxs, np.abs(k3iv[nn-1, 1]), 'g--')
-    plt.plot(xxs, np.abs(k3iv[nn-1, 2]), 'g.')
-    plt.plot(xxs, np.abs(k3iv[nn+1, 0]), 'b')
-    plt.plot(xxs, np.abs(k3iv[nn+1, 1]), 'b--')
-    plt.plot(xxs, np.abs(k3iv[nn+1, 2]), 'b.')
 plt.show()
 
 # plt.subplot(211)
