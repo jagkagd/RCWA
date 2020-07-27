@@ -3,7 +3,7 @@ dn = 0.15;
 no = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. - dn./2;
 ne = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. + dn./2;
 % ng = sqrt((2.*no.^2+ne.^2)./3)
-alpha = 45./2;
+alpha = 60./2;
 k0 = 2.*pi./532e-9;
 pb = 2 .* 2.*pi./(2.*k0.*ng.*cos(deg2rad(alpha)));
 
@@ -16,10 +16,12 @@ DERr = [];
 DETl = [];
 DETr = [];
 
+lay1 = PVG(5e-6, pb, alpha, 1, no, ne);
+lay2 = PVG(5e-6, pb, alpha, -1, no, ne);
 for i = 1:length(wls)
     pb = 2 .* 2.*pi./(2.*k0.*ng.*cos(deg2rad(alpha)));
-    lay = PVG(5e-6, pb, alpha, 1, no, ne);
-    rcwa = RCWA(ng, ng, lay, nn, [1, 1j], [1, -1j]);
+    
+    rcwa = RCWA(ng, ng, {lay1, lay2}, nn, [1, 1j], [1, -1j]);
     [derl, derr, detl, detr] = rcwa.solve(0, 0, wls(i), 1, 1j);
     DERl(i, :) = derl;
     DERr(i, :) = derr;
