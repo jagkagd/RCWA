@@ -22,7 +22,7 @@ methods
             Kxs(i) = obj.layers{i}.Kx;
         end
         if ~all(Kxs == Kxs(1))
-            throw(MException("RCWA:layers", "All layers should have the same Kx", Kxs))
+            throw(MException("RCWA:layers", "All layers should have the same Kx"))
         end
         obj.lKx = Kxs(1);
     end
@@ -81,7 +81,7 @@ methods
             [SRlxm, SRrxm],
             [SRlym, SRrym]
         ];
-        UI = [
+        UI = n1 * [
             [diag(delta .* (UVkiixm * II * Ei)), ZERO],
             [ZERO, diag(delta .* (UVkiiym * II * Ei))]
         ];

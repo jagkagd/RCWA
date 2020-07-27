@@ -16,8 +16,8 @@ DERr = [];
 DETl = [];
 DETr = [];
 
-lay1 = PVG(5e-6, pb, alpha, 1, no, ne);
-lay2 = PVG(5e-6, pb, alpha, -1, no, ne);
+lay1 = PVG(2e-6, pb, alpha, 1, no, ne);
+lay2 = PVG(2e-6, pb, alpha*1.1, 1, no, ne);
 for i = 1:length(wls)
     pb = 2 .* 2.*pi./(2.*k0.*ng.*cos(deg2rad(alpha)));
     
