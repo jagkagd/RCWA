@@ -78,5 +78,37 @@ methods
         ], 10);
         res = A;
     end
+    
+    function [Qp, Qm, Wp, Vp, Wm, Vm] = getQW(obj, m, k0, kiv)
+        A = obj.getA(m, k0, kiv);
+        [W, q] = eig(A);
+        Q = 1.j .* k0 .* round(diag(q), 12);
+        pPredict = imag(Q) <= 0;
+        mPredict = imag(Q) > 0;
+        Qp = Q(pPredict);
+        Qm = Q(mPredict);
+        WVp = W(:, pPredict);
+        WVm = W(:, mPredict);
+        M = length(WVp);
+        Wp = WVp(1:M/2, :);
+        Vp = WVp(M/2+1:end, :);
+        Wm = WVm(1:M/2, :);
+        Vm = WVm(M/2+1:end, :);
+    end
+    
+    function [res1, res2] = getTm(obj, m, k0, kiv)
+        d = obj.d;
+        ms = -m:m;
+        res1 = struct();
+        res2 = struct();
+        [Qp, Qm, res1.Wp, res1.Vp, res2.Wm, res2.Vm] = obj.getQW(m, k0, kiv);
+        K = @(z) diag(exp(-1j.*[-ms.*obj.Kz, -ms.*obj.Kz].*z));
+        Xp = @(z) diag(exp(Qp.*z));
+        Xm = @(z) diag(exp(Qm.*z));
+        res2.A = K(d) * res1.Wp * Xp(d);
+        res2.B = K(d) * res1.Vp * Xp(d);
+        res1.E = K(-d) * res2.Wm * Xm(-d);
+        res1.D = K(-d) * res2.Vm * Xm(-d);
+    end
 end
 end
