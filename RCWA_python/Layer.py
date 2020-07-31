@@ -1,6 +1,6 @@
 from scipy.linalg import eig, inv
 from scipy.integrate import quad
-from numpy import array, split, zeros, sin, cos, tan, pi, diag, sqrt, deg2rad, exp, real
+from numpy import array, split, zeros, sin, cos, tan, pi, diag, sqrt, deg2rad, exp, real, arctan
 import numpy as np
 
 def cquad(func, a, b, **kwargs):
@@ -162,22 +162,17 @@ class AnisHomo(Layer):
             return 0
 
 class PVG(Layer):
-    def __init__(self, d, pitch, delta, chi, no, ne):
+    def __init__(self, d, Kx, Kz, chi, no, ne):
         super().__init__(d)
-        self.pitch = pitch # LC rotate 2pi (m)
-        self.period = pitch / 2 # period of grating, LC rotate pi (m)
-        self.delta = deg2rad(delta) # angle (rad) between z axis
         self.chi = chi # chirality
-        self.K = 2*pi/(self.period)
-        self.Kx = self.K*sin(self.delta)
-        self.Kz = self.K*cos(self.delta)
-        # self.px = 2*pi/self.Kx
-        # self.pz = 2*pi/self.Kz
+        self.Kx = Kx
+        self.Kz = Kz
         self.no = no
         self.ne = ne
         self.eo = no**2
         self.ee = ne**2
         self.Kv = array([self.Kx, 0, self.Kz])
+        self.delta = arctan(self.Kx/self.Kz)
 
     def eps(self, p, q, n):
         eo, ee, delta, chi = self.eo, self.ee, self.delta, self.chi
@@ -193,6 +188,16 @@ class PVG(Layer):
         ejkn = lambda Kr: 1/(2*pi) * exp(-1.j*n*Kr)
 
         return cquad(lambda Kr: es[p][q](Kr)*ejkn(Kr), -pi, pi)[0]
+
+class PVG_dp(PVG):
+    def __init__(self, d, pitch, delta, chi, no, ne):
+        self.pitch = pitch # LC rotate 2pi (m)
+        self.period = pitch / 2 # period of grating, LC rotate pi (m)
+        self.delta = deg2rad(delta) # angle (rad) between z axis
+        self.K = 2*pi/(self.period)
+        Kx = self.K*sin(self.delta)
+        Kz = self.K*cos(self.delta)
+        super().__init__(d, Kx, Kz, chi, no, ne)
 
 class PVG2(Layer):
     def __init__(self, d, Kx, Kz, chi, no, ne):
@@ -216,3 +221,10 @@ class PVG2(Layer):
         ezz = lambda n: {0: eo}.get(n, 0)
         eps = [[exx, exy, exz], [exy, eyy, eyz], [exz, eyz, ezz]]
         return eps[p][q](n)
+
+def genGradient(layClass, n, d, px, pz0, pz1, chi, no, ne):
+    d0 = d/n
+    d0s = np.array(list(range(n)))*1./n*d
+    pzf = lambda z: 1/(1/pz0 + (1/pz1-1/pz0)*(z/d))
+    pzs = [pzf(di) for di in d0s]
+    return [layClass(d0, 2*pi/px, 2*pi/pz, chi, no, ne) for pz in pzs]

@@ -1,4 +1,4 @@
-ng = 1.58;
+ng = 1.56;
 dn = 0.2;
 no = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. - dn./2;
 ne = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. + dn./2;
@@ -7,10 +7,13 @@ alpha = rad2deg(asin(1/ng*sin(deg2rad(20))))./2;
 k0 = 2.*pi./940e-9;
 Kx = -2*k0*ng*sin(deg2rad(alpha))*cos(deg2rad(alpha));
 Kz = -2*k0*ng*sin(deg2rad(alpha))*sin(deg2rad(alpha));
+px = 2*pi/Kx;
+pz = 2*pi/Kz;
 %ds = 0:0.01:2;
 %wls = (400:700)*1e-9;
 wl = 940e-9;
-thetas = -10:10;
+thetas = -40:40;
+%theta = 0
 nn = 1;
 DERl = [];
 DERr = [];
@@ -19,11 +22,12 @@ DETr = [];
 angs1 = [];
 angs2 = [];
 angs3 = [];
-
+%lay = PVG2(15e-6, Kx, Kz, -1, no, ne);
+lays = genGradient(@PVG2, 10, 15e-6, px, pz*2, pz*0.5, -1, no, ne);
 for i = 1:length(thetas)
     theta = rad2deg(asin(sin(deg2rad(thetas(i)))/ng));
-    lay = PVG2(wl*0.5/dn, Kx, Kz, -1, no, ne);
-    rcwa = RCWA(ng, ng, {lay}, nn, [1, 1j], [1, -1j]);
+    
+    rcwa = RCWA(ng, ng, lays, nn, [1, 1j], [1, -1j]);
     [derl, derr, detl, detr, rcwa] = rcwa.solve(0, theta, wl, 1, 1j);
     DERl(i, :) = derl;
     DERr(i, :) = derr;
@@ -62,10 +66,10 @@ plot(ax2, xxs,  DETl(nn+1, :), 'b');
 plot(ax2, xxs,  DETr(nn, :), 'r--');
 plot(ax2, xxs,  DETr(nn-1, :), 'g--');
 plot(ax2, xxs,  DETr(nn+1, :), 'b--');
-% plot(ax2, xxs,  DETr(nn-1, :)./(DETr(nn-1, :) + DETl(nn, :)), 'k');
+%plot(ax2, xxs,  DETr(nn-1, :)+DETl(nn-1, :), 'k');
 hold(ax2, 'off');
-figure(2);
-plot(xxs, angs1, xxs, angs2, xxs, angs3)
+% figure(2);
+% plot(xxs, angs1, xxs, angs2, xxs, angs3)
 % plt.subplot(211);
 % thetam, phim = meshgrid(thetas, phis);
 % plt.pcolormesh(thetam./60.*cos(deg2rad(phim)), thetam./60.*sin(deg2rad(phim)), DERl[:, :, nn+1].T);
