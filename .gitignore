@@ -4,3 +4,5 @@ EMpy/
 RCWA copy.py
 *.zip
 .vscode/
+RCWA_python/__pycache__/
+RCWA_matlab/*.asv

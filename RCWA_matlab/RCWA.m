@@ -2,7 +2,7 @@ classdef RCWA
 properties
     n1, n3, base1, base2, m, ms, M, layers,
     phi, theta, k0uv, DERl, DERr, DETl, DETr,
-    k1iv, k3iv,
+    k1iv, k3iv, polR, polT,
     lKx
 end
 methods
@@ -221,6 +221,14 @@ methods
         obj.DETr =  abs(trv).^2 .* real(k3iv(1:end, end))./kiv(end);
         obj.k1iv = k1iv;
         obj.k3iv = k3iv;
+        obj.polR = zeros(obj.M, 2);
+        obj.polT = zeros(obj.M, 2);
+        polR0 = rlv*obj.base1.' + rrv*obj.base2.';
+        polT0 = tlv*obj.base1.' + trv*obj.base2.';
+        for i=1:obj.M
+            obj.polR(i, :) = norml(polR0(i, :));
+            obj.polT(i, :) = norml(polT0(i, :));
+        end
         DERl = obj.DERl;
         DERr = obj.DERr;
         DETl = obj.DETl;

@@ -22,8 +22,8 @@ DETr = [];
 angs1 = [];
 angs2 = [];
 angs3 = [];
-%lay = PVG2(15e-6, Kx, Kz, -1, no, ne);
-lays = genGradient(@PVG2, 10, 15e-6, px, pz*2, pz*0.5, -1, no, ne);
+lays = {PVG2(wl*0.25/dn, Kx, Kz*0.9, -1, no, ne), PVG2(wl*0.25/dn, Kx, Kz*1.1, -1, no, ne)};
+%lays = genGradient(@PVG2, 10, 15e-6, px, pz*2, pz*0.5, -1, no, ne);
 for i = 1:length(thetas)
     theta = rad2deg(asin(sin(deg2rad(thetas(i)))/ng));
     

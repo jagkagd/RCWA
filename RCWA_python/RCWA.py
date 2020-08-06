@@ -208,5 +208,7 @@ class RCWA():
         self.DETr =  abs(trv)**2 * real(k3iv[:, -1])/kiv[-1]
         self.k1iv = k1iv/k0k
         self.k3iv = k3iv/k0k
+        self.polR = np.array([norml(Eo) for Eo in rlv[:, np.newaxis]*self.base1 + rrv[:, np.newaxis]*self.base2])
+        self.polT = np.array([norml(Eo) for Eo in tlv[:, np.newaxis]*self.base1 + trv[:, np.newaxis]*self.base2])
         return self.DERl, self.DERr, self.DETl, self.DETr
     

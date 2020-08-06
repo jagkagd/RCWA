@@ -15,28 +15,34 @@ DERl = [];
 DERr = [];
 DETl = [];
 DETr = [];
+polR = [];
+polT = [];
 
 lay1 = PVG(5e-6, pb, alpha, 1, no, ne);
-lay2 = PVG(5e-6, pb, alpha, -1, no, ne);
+%lay2 = PVG(5e-6, pb, alpha, -1, no, ne);
 for i = 1:length(wls)
     pb = 2 .* 2.*pi./(2.*k0.*ng.*cos(deg2rad(alpha)));
     
-    rcwa = RCWA(ng, ng, {lay1, lay2}, nn, [1, 1j], [1, -1j]);
-    [derl, derr, detl, detr] = rcwa.solve(0, 0, wls(i), 1, 1j);
+    rcwa = RCWA(ng, ng, {lay1}, nn, [1, 1j], [1, -1j]);
+    [derl, derr, detl, detr, rcwa] = rcwa.solve(0, 0, wls(i), 1, 1j);
     DERl(i, :) = derl;
     DERr(i, :) = derr;
     DETl(i, :) = detl;
     DETr(i, :) = detr;
+    polR(i, :, :) = rcwa.polR;
+    polT(i, :, :) = rcwa.polT;
 end
 
 DERl = DERl.';
 DERr = DERr.';
 DETl = DETl.';
 DETr = DETr.';
+polR = permute(polR, [2, 1, 3]);
+polT = permute(polT, [2, 1, 3]);
 
 xxs = wls;
 nn = nn + 1;
-ax1 = subplot(2, 1, 1);
+ax1 = subplot(2, 2, 1);
 hold(ax1, 'on');
 plot(ax1, xxs, DERl(nn, :), 'r');
 plot(ax1, xxs, DERl(nn-1, :), 'g');
@@ -47,7 +53,7 @@ plot(ax1, xxs, DERr(nn+1, :), 'b--');
 plot(ax1, xxs, DERl(nn+1, :)./(DERl(nn+1, :)+DETl(nn, :)), 'k');
 hold(ax1, 'off');
 % plt.plot(wls,  DERr[nn]+DERl[nn], 'y');
-ax2 = subplot(2, 1, 2);
+ax2 = subplot(2, 2, 2);
 hold(ax2, 'on');
 plot(ax2, xxs,  DETl(nn, :), 'r');
 plot(ax2, xxs,  DETl(nn-1, :), 'g');
@@ -56,6 +62,15 @@ plot(ax2, xxs,  DETr(nn, :), 'r--');
 plot(ax2, xxs,  DETr(nn-1, :), 'g--');
 plot(ax2, xxs,  DETr(nn+1, :), 'b--');
 hold(ax2, 'off');
+
+ax3 = subplot(2, 2, 3);
+hold(ax3, 'on');
+Eu = polR(nn+1, :, 1);
+Ev = polR(nn+1, :, 2);
+plot(ax3, xxs, abs(Ev./Eu));
+yyaxis right
+plot(ax3, xxs, angle(Ev./Eu)/pi);
+hold(ax3, 'off');
 % plt.subplot(211);
 % thetam, phim = meshgrid(thetas, phis);
 % plt.pcolormesh(thetam./60.*cos(deg2rad(phim)), thetam./60.*sin(deg2rad(phim)), DERl[:, :, nn+1].T);
