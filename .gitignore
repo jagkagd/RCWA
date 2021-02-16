@@ -6,3 +6,5 @@ RCWA copy.py
 .vscode/
 RCWA_python/__pycache__/
 RCWA_matlab/*.asv
+*.docx
+*.pyc

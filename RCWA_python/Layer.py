@@ -200,7 +200,7 @@ class PVG_dp(PVG):
         super().__init__(d, Kx, Kz, chi, no, ne)
 
 class PVG2(Layer):
-    def __init__(self, d, Kx, Kz, chi, no, ne):
+    def __init__(self, d, Kx, Kz, chi, no, ne, phi0):
         super().__init__(d)
         self.chi = chi # chirality
         self.no = no
@@ -210,13 +210,14 @@ class PVG2(Layer):
         self.Kx = Kx
         self.Kz = Kz
         self.Kv = array([self.Kx, 0, self.Kz])
+        self.phi0 = phi0
 
     def eps(self, p, q, n):
-        eo, ee, chi = self.eo, self.ee, self.chi
-        exx = lambda n: {1: (ee-eo)/4, 0: (ee+eo)/2}.get(abs(n), 0)
-        exy = lambda n: {1: -chi*1j*(ee-eo)/4, -1: chi*1j*(ee-eo)/4}.get(n, 0)
+        eo, ee, chi, phi0 = self.eo, self.ee, self.chi, self.phi0
+        exx = lambda n: {1: (ee-eo)/4*exp(-2j*phi0), -1: (ee-eo)/4*exp(2j*phi0), 0: (ee+eo)/2}.get(n, 0)
+        exy = lambda n: {1: -chi*1j*exp(-2j*phi0)*(ee-eo)/4, -1: chi*1j*exp(2j*phi0)*(ee-eo)/4}.get(n, 0)
         exz = lambda n: 0
-        eyy = lambda n: {1: (eo-ee)/4, 0: (ee+eo)/2}.get(abs(n), 0)
+        eyy = lambda n: {1: (eo-ee)/4*exp(-2j*phi0), -1: (eo-ee)/4*exp(2j*phi0), 0: (ee+eo)/2}.get(n, 0)
         eyz = lambda n: 0
         ezz = lambda n: {0: eo}.get(n, 0)
         eps = [[exx, exy, exz], [exy, eyy, eyz], [exz, eyz, ezz]]

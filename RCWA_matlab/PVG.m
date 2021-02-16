@@ -1,25 +1,20 @@
 classdef PVG < Layer
 properties
-    pitch, period, delta, chi, K
+    delta, chi,
     no, ne, eo, ee
 end
 methods
-    function obj = PVG(d, pitch, delta, chi, no, ne)
+    function obj = PVG(d, Kx, Kz, chi, no, ne)
         obj = obj@Layer(d);
-        obj.pitch = pitch; % LC rotate 2pi (m)
-        obj.period = pitch ./ 2; % period of grating, LC rotate pi (m)
-        obj.delta = deg2rad(delta); % angle (rad) between z axis
         obj.chi = chi; % chirality
-        obj.K = 2.*pi./(obj.period);
-        obj.Kx = obj.K.*sin(obj.delta);
-        obj.Kz = obj.K.*cos(obj.delta);
-        % obj.px = 2.*pi/obj.Kx
-        % obj.pz = 2.*pi/obj.Kz
+        obj.Kx = Kx;
+        obj.Kz = Kz;
         obj.no = no;
         obj.ne = ne;
         obj.eo = no.^2;
         obj.ee = ne.^2;
         obj.Kv = [obj.Kx, 0, obj.Kz];
+        obj.delta = atan(obj.Kx/obj.Kz);
     end
 
     function res = eps(obj, p, q, n)

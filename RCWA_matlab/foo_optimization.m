@@ -1,8 +1,5 @@
 function loss = foo_optimization(ps)
-    d1 = ps(1);
-    Kz1 = ps(2);
-    d2 = ps(3);
-    Kz2 = ps(4);
+    
     %Kx = ps(5);
     ng = 1.56;
     dn = 0.2;
@@ -13,10 +10,16 @@ function loss = foo_optimization(ps)
     k0 = 2.*pi./wl0;
     Kx = -2*k0*ng*sin(deg2rad(alpha))*cos(deg2rad(alpha));
     Kz = -2*k0*ng*sin(deg2rad(alpha))*sin(deg2rad(alpha));
+    
+    d1 = ps(1);
+    Kz1 = ps(2)*Kz;
+    d2 = ps(3);
+    Kz2 = ps(4)*Kz;
+    
     thetas = -40:2:40;
     nn = 1;
     DETr = [];
-    lays = {PVG2(wl0*d1/dn, Kx, Kz1, -1, no, ne), PVG2(wl0*d2/dn, Kx, Kz2, -1, no, ne)};
+    lays = {PVG2(wl0*d1/dn, Kx, Kz1, -1, no, ne, 0), PVG2(wl0*d2/dn, Kx, Kz2, -1, no, ne, 0)};
     for i = 1:length(thetas)
         theta = rad2deg(asin(sin(deg2rad(thetas(i)))/ng));
 

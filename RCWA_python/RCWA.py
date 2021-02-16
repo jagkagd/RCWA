@@ -1,6 +1,8 @@
+from typing import List
 from scipy.linalg import eig, inv, solve as linsolve
 from numpy import array, split, zeros, sin, cos, tan, pi, diag, sqrt, deg2rad, exp, real
 import numpy as np
+from Beam import Plane
 
 def dot(x, y):
     return sum([xi*yi for (xi, yi) in zip(x, y)])
@@ -9,15 +11,23 @@ def norml(v):
     vv = array(v)
     return vv / sqrt(dot(vv, np.conj(vv)))
 
-def eulerMatrix(seq, angs, i, j):
-    if seq == 'zyz':
-        eulerMatrixElem = lambda i, j: \
-            (lambda a, b, c: [
+def eulerMatrix(seq, angs, i, j=None):
+    if i == 'm':
+        if seq == 'zyz':
+            return (lambda a, b, c: [
                 [cos(a)*cos(b)*cos(c)-sin(a)*sin(c), -cos(c)*sin(a)-cos(a)*cos(b)*sin(c), cos(a)*sin(b)],
                 [cos(b)*cos(c)*sin(a)+cos(a)*sin(c),  cos(a)*cos(c)-cos(b)*sin(a)*sin(c), sin(a)*sin(b)],
                 [-cos(c)*sin(b), sin(b)*sin(c), cos(b)]
-            ][i][j])
-    return eulerMatrixElem(i, j)(*angs)
+            ])(*angs)
+    else:
+        if seq == 'zyz':
+            eulerMatrixElem = lambda i, j: \
+                (lambda a, b, c: [
+                    [cos(a)*cos(b)*cos(c)-sin(a)*sin(c), -cos(c)*sin(a)-cos(a)*cos(b)*sin(c), cos(a)*sin(b)],
+                    [cos(b)*cos(c)*sin(a)+cos(a)*sin(c),  cos(a)*cos(c)-cos(b)*sin(a)*sin(c), sin(a)*sin(b)],
+                    [-cos(c)*sin(b), sin(b)*sin(c), cos(b)]
+                ][i][j])
+        return eulerMatrixElem(i, j)(*angs)
 
 def k2uv_xy(k):
     kx, ky, kz = k
@@ -61,7 +71,7 @@ class RCWA():
     def getLayerT(self, n1, k0, kiv):
         return [layer.getTm(self.m, k0, kiv) for layer in self.layers]
 
-    def getIn(self, k1iv, Ei):
+    def getIn(self, k1iv, k0uv, Ei):
         II = array([[0, -1], [1, 0]])
         ZERO = np.zeros((self.M, self.M))
         n1 = self.n1
@@ -78,12 +88,13 @@ class RCWA():
         URrxm = n1 * diag(UVk1ixm @ II @ self.base2)
         URrym = n1 * diag(UVk1iym @ II @ self.base2)
 
-        kuvxy = array([
-            [eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 0), 
-             eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 1)], 
-            [eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 0), 
-             eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 1)]
-        ])
+        # kuvxy = array([
+        #     [eulerMatrix('zyz', [phi, theta, 0], 0, 0), 
+        #      eulerMatrix('zyz', [phi, theta, 0], 0, 1)], 
+        #     [eulerMatrix('zyz', [phi, theta, 0], 1, 0), 
+        #      eulerMatrix('zyz', [phi, theta, 0], 1, 1)]
+        # ])
+        kuvxy = k2uv_xy(k0uv)
         delta = self.ms == 0
         UVkiixym = np.vstack([kuvxy]*self.M)
         UVkiixm = UVkiixym[::2]
@@ -109,7 +120,6 @@ class RCWA():
     
     def getOut(self, k3iv):
         II = array([[0, -1], [1, 0]])
-        ZERO = np.zeros((self.M, self.M))
         n3 = self.n3
 
         UVk3ixym = np.vstack([k2uv_xy(k3v) for k3v in k3iv])
@@ -140,14 +150,16 @@ class RCWA():
         theta: angle between z axis
         light to z+
         '''
-        self.phi = deg2rad(phi)
-        self.theta = deg2rad(theta)
-        self.k0uv = array([
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 0, 2),
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 1, 2),
-            eulerMatrix('zyz', [self.phi, self.theta, 0], 2, 2)
+        phi = deg2rad(phi)
+        theta = deg2rad(theta)
+        k0uv = array([
+            eulerMatrix('zyz', [phi, theta, 0], 0, 2),
+            eulerMatrix('zyz', [phi, theta, 0], 1, 2),
+            eulerMatrix('zyz', [phi, theta, 0], 2, 2)
         ])
-
+        return self.solve_k0(k0uv, wl, Eu, Ev)
+    
+    def solve_k0(self, k0uv, wl: float, Eu, Ev, info='T'):
         self.DERl = np.zeros(self.M)
         self.DERr = np.zeros_like(self.DERl)
         self.DETl = np.zeros_like(self.DERl)
@@ -155,7 +167,7 @@ class RCWA():
         n1, n3 = self.n1, self.n3
         Ei = norml(array([Eu, Ev]))
         k0k = 2*pi/wl
-        k0v = self.k0uv * k0k
+        k0v = k0uv * k0k
         kiv = k0v * n1
         k1k = k0k * n1
         k3k = k0k * n3
@@ -177,7 +189,7 @@ class RCWA():
                 k3iv[i][-1] = -1j*sqrt(-k3k**2 + kx**2 + ky**2)
 
         Tl = sum(self.getLayerT(self.n1, k0k, kiv), [])
-        T0 = self.getIn(k1iv, Ei)
+        T0 = self.getIn(k1iv, k0uv, Ei)
         Te = self.getOut(k3iv)
         Ts = (T0 + Tl + Te)[1:-1]
 
@@ -191,7 +203,6 @@ class RCWA():
             res[i]   = ZEROS*(i//2) + [A, Wm, -Wp, -E] + ZEROS*(len(Ts)//2-1-i//2)
             res[i+1] = ZEROS*(i//2) + [B, Vm, -Vp, -D] + ZEROS*(len(Ts)//2-1-i//2)
         P = np.asarray(np.bmat(res))[:, (self.M*2):(-2*self.M)]
-        delta = self.ms == 0
 
         SI, _, UI, _ = T0[1]
         p = np.asarray(np.bmat(
@@ -202,6 +213,11 @@ class RCWA():
         rlv, rrv = split(res[:2*self.M], 2)
         tlv, trv = split(res[-2*self.M:], 2)
 
+        self.rlv = rlv
+        self.rrv = rrv
+        self.tlv = tlv
+        self.trv = trv
+
         self.DERl = -abs(rlv)**2 * real(k1iv[:, -1])/kiv[-1]
         self.DERr = -abs(rrv)**2 * real(k1iv[:, -1])/kiv[-1]
         self.DETl =  abs(tlv)**2 * real(k3iv[:, -1])/kiv[-1]
@@ -210,5 +226,32 @@ class RCWA():
         self.k3iv = k3iv/k0k
         self.polR = np.array([norml(Eo) for Eo in rlv[:, np.newaxis]*self.base1 + rrv[:, np.newaxis]*self.base2])
         self.polT = np.array([norml(Eo) for Eo in tlv[:, np.newaxis]*self.base1 + trv[:, np.newaxis]*self.base2])
-        return self.DERl, self.DERr, self.DETl, self.DETr
+        if info == 'T':
+            return self.DERl, self.DERr, self.DETl, self.DETr
+        elif info == 'detail':
+            return (rlv, rrv, tlv, trv), (k1iv, k3iv)
+        else:
+            raise NotImplementedError()
     
+    def solve_beam(self, phi, theta, Eu, Ev, beam, fxs, fys, dfS):
+        # x * y * [Rl, Rr, Tl, Tr] * [-m, ..., m]
+        wl = beam.wl
+        k0 = 2*np.pi/wl*self.n1
+        if isinstance(beam, Plane):
+            k1 = eulerMatrix('zyz', [phi, theta, 0], 'm') @ np.array([0, 0, k0])
+            T0 = np.array(self.solve_k0(k1, wl, Eu, Ev))
+            return T0
+        T0 = np.zeros((*fxs.shape, 4, self.M))
+        T = np.zeros_like(T0)
+        for i in range(fxs.shape[0]):
+            for j in range(fxs.shape[1]):
+                kx0, ky0 = fxs[i, j], fys[i, j]
+                kz0 = np.sqrt(k0**2 - kx0**2 - ky0**2)
+                k1 = eulerMatrix('zyz', [phi, theta, 0], 'm') @ np.array([kx0, ky0, kz0])
+                T0[i, j] = np.array(self.solve_k0(k1/k0, wl, Eu, Ev))
+                T[i, j] = T0[i, j] * beam.amplitude(kx0, ky0)
+        res = np.einsum('ijkl, ij -> kl', T, dfS) / np.sum(beam.amplitude(fxs, fys)*dfS)
+        # return [(T0[:, :, i, :], res[i]) for i in range(4)]
+        # return T0
+        return res
+        

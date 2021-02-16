@@ -4,21 +4,18 @@ no = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. - dn./2;
 ne = (dn + 2.*sqrt(-2.*dn.^2 + 9.*ng.^2))./6. + dn./2;
 wl0 = 940e-9;
 k0 = 2.*pi./wl0;
-alpha = rad2deg(asin(1/ng*sin(deg2rad(20))))./2; % 这个地方要改角度
+alpha = rad2deg(asin(1/ng*sin(deg2rad(60))))./2;
 Kx = -2*k0*ng*sin(deg2rad(alpha))*cos(deg2rad(alpha));
 Kz = -2*k0*ng*sin(deg2rad(alpha))*sin(deg2rad(alpha));
 
 % let d1 = wl*dd1/dn, d2 = wl*dd2/dn
 % four initial parameters: dd1, Kz1, dd2, Kz2
-%x0 = [0.533632448, 0.053913255, 0.541489986, 2.120916468];
-%x0 = [0.6892, -1.4059, 0.4296, 4.4782];
-x0 = [0.7, -1, 0.4, 4.5] % 这儿是跑的初始�?�，取�?�下限是 [0, -10, 0, -10], 上限是[1, 10, 1, 10]
+x0 = [0.481681478, 0.5, 0.392741029, 0.5];
 options = optimoptions('fmincon','Algorithm','interior-point','Display','iter');
+% results in res
 res = fmincon(@foo_optimization, x0, [], [], [], [], [0, -10, 0, -10], [1, 10, 1, 10], [], options);
 
-%res = x0;
-
-thetas = -40:40; % 这儿是跑的角度范�?
+thetas = -40:40;
 nn = 1;
 DERl = [];
 DERr = [];
@@ -26,8 +23,8 @@ DETl = [];
 DETr = [];
 DETr1 = [];
 DETr2 = [];
-lay1 = PVG2(wl0*res(1)/dn, Kx, res(2)*Kz, -1, no, ne, 0);
-lay2 = PVG2(wl0*res(3)/dn, Kx, res(4)*Kz, -1, no, ne, 0);
+lay1 = PVG2(wl0*res(1)/dn, Kx, res(2)*Kz, -1, no, ne);
+lay2 = PVG2(wl0*res(3)/dn, Kx, res(4)*Kz, -1, no, ne);
 lays = {lay1, lay2};
 for i = 1:length(thetas)
     theta = rad2deg(asin(sin(deg2rad(thetas(i)))/ng));
@@ -78,6 +75,4 @@ plot(ax2, xxs,  DETr(nn+1, :), 'b--');
 
 plot(ax2, xxs,  DETr1(nn-1, :), 'k');
 plot(ax2, xxs,  DETr2(nn-1, :), 'k--');
-
-% plot(ax2, -20:2:20, [0.934456, 0.978392, 0.995892, 0.992582, 0.980255, 0.967954, 0.96414, 0.968825, 0.976756, 0.984567, 0.989199, 0.987755, 0.981971, 0.974739, 0.970073, 0.970198, 0.975934, 0.985032, 0.993158, 0.994219, 0.981931]);
 hold(ax2, 'off');
