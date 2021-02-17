@@ -3,7 +3,8 @@ from Layer import PVG2
 import numpy as np
 from numpy import sqrt, cos, array, pi, rad2deg, deg2rad, arcsin as asin, sin
 import matplotlib.pyplot as plt
-from Stack import EChiral, solve_stack, KPick, KRotator, Field
+from matplotlib import ticker
+from Stack import EChiral, solve_stack, KPick, KRotator, Field, plot_fields
 from pprint import pprint
 
 ng = 1.56
@@ -55,6 +56,8 @@ stacklist = {
         KPick(0),
         PVG2(d, *Kcalc(20, wl0, ng), 1, no, ne, 0),
         KPick(0),
+        PVG2(d, *Kcalc(-20, wl0, ng), -1, no, ne, 0),
+        KPick(0),
     ],
     30: [
         PVG2(d, *Kcalc(40, wl0, ng), 1, no, ne, 0), 
@@ -64,6 +67,9 @@ stacklist = {
         EChiral(),
         PVG2(d, *Kcalc(20, wl0, ng), 1, no, ne, 0),
         KPick(1),
+        EChiral(),
+        PVG2(d, *Kcalc(-20, wl0, ng), -1, no, ne, 0),
+        KPick(0),
     ],
     50: [
         EChiral(),
@@ -98,43 +104,40 @@ def defeff(deflx, defly):
     # print(k0v)
     stacks = stacklist[deflx] + [KRotator(90)] + stacklist[defly]
 
-    field = solve_stack(nn, ng, wl0, stacks, [1, 1j], [1j, 1], k0v, 1/sqrt(2), -1j/sqrt(2))[0]
-    # print(field.ang())
-    # print(np.abs(field.amp)**2 * np.real(field.k0uv[-1]/k0v[-1]))
-    # return (field.ang(), np.abs(field.amp)**2 * np.real(field.k0uv[-1]/k0v[-1]))
-    return np.abs(field.amp)**2 * np.real(field.k0uv[-1]/k0v[-1])
+    fields = solve_stack(nn, ng, wl0, stacks, [1, 1j], [1j, 1], k0v, 1/sqrt(2), -1j/sqrt(2), mode='all')
+    # field = solve_stack(nn, ng, wl0, stacks, [1, 1j], [1j, 1], k0v, 1/sqrt(2), -1j/sqrt(2))[0]
+    # return np.abs(field.amp)**2 * np.real(field.k0uv[-1]/k0v[-1])
+    return fields
 
-# print(defeff(-20, 0))
-pprint([['{:.2f}'.format(defeff(i, j)) for j in [0, 30, 50, 70]] for i in [0, 30, 50, 70]])
+# pprint([['{:.2f}'.format(defeff(i, j)) for j in [0, 30, 50, 70]] for i in [0, 30, 50, 70]])
 
-# xxs = thetas
-# plt.subplot(211)
-# plt.plot(xxs, DERl[nn], 'r')
-# plt.plot(xxs, DERr[nn], 'r--')
-# plt.plot(xxs, DERl[nn-1], 'g')
-# plt.plot(xxs, DERl[nn+1], 'b')
-# plt.plot(xxs, DERr[nn-1], 'g--')
-# plt.plot(xxs, DERr[nn+1], 'b--')
-# #plt.ylim(0, 1.2)
-# # plt.plot(wls,  DERr[nn]+DERl[nn], 'y')
-# plt.subplot(212)
-# plt.plot(xxs,  DETl[nn], 'r')
-# plt.plot(xxs,  DETr[nn], 'r--')
-# plt.plot(xxs,  DETl[nn-1], 'g')
-# plt.plot(xxs,  DETl[nn+1], 'b')
-# plt.plot(xxs,  DETr[nn-1], 'g--')
-# plt.plot(xxs,  DETr[nn+1], 'b--')
-# # plt.ylim(0, 1)
-# # plt.subplot(221)
-# # plt.pcolormesh(fxs, fys, res[:, :, -1, nn-1], shading='gouraud', vmin=0.5, vmax=1)
-# # plt.colorbar()
-# # plt.subplot(222)
-# # plt.pcolormesh(fxs, fys, beam.amplitude(fxs, fys), shading='gouraud')
-# # plt.colorbar()
-# # plt.subplot(223)
-# # plt.pcolormesh(fxs, fys, res[:, :, -2, nn-1], shading='gouraud')
-# # plt.colorbar()
-# # plt.figure()
-# # plt.pcolormesh(fxs, fys, dfS, shading='gouraud')
-# # plt.colorbar()
-# plt.show()
+fieldss = defeff(30, 30)
+k0v = [0, 0, 1]
+# fieldss = solve_stack(nn, ng, wl0, [
+#     # EChiral(),
+#     KRotator(90),
+#     PVG2(d, *Kcalc(20, wl0, ng), 1, no, ne, 0),
+#     KPick(1),
+# ], [1, 1j], [1j, 1], k0v, 1/sqrt(2), -1j/sqrt(2), mode='all')
+# print(fieldss)
+# plt.figure(figsize=(8, 4.3))
+titles = ['Inc.', 'x + 40 deg', 'x - 40 deg', 'x + 20 deg', 'y + 40 deg', 'y - 40 deg', 'y + 20 deg']
+for (i, fields) in enumerate(fieldss):
+    plt.subplot(331+i)
+    ax = plt.gca()
+    plot_fields(ax, fields, [0, 0, 1], ng)
+    plt.xlim(-90, 90)
+    plt.ylim(-90, 90)
+    ax.set_aspect(1)
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(30))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(30))
+    ax.grid('on')
+    ax.tick_params(which='both', direction='in')
+    # ax.set_title(titles[i])
+plt.subplots_adjust(top=0.95,
+bottom=0.05,
+left=0.05,
+right=0.98,
+hspace=0.2,
+wspace=0.25)
+plt.show()
